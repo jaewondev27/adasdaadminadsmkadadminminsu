@@ -78,6 +78,20 @@
     function setStatus(msg) { statusEl.textContent = '상태: ' + msg; }
 
     async function bootstrapAuth() {
+      const hash = window.location.hash || '';
+      if (hash.startsWith('#auth=')) {
+        const encoded = decodeURIComponent(hash.slice(6));
+        try {
+          const json = decodeURIComponent(escape(atob(encoded)));
+          const parsed = JSON.parse(json);
+          if (parsed && parsed.token) {
+            localStorage.setItem('minsugpt_auth_v1', JSON.stringify(parsed));
+          }
+        } catch (e) {
+          console.error('admin auth payload decode failed', e);
+        }
+        history.replaceState({}, '', window.location.pathname + window.location.search);
+      }
       const raw = localStorage.getItem('minsugpt_auth_v1');
       if (!raw) {
         window.location.replace('../login.html?mode=admin');
