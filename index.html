@@ -57,7 +57,7 @@
 
   <script>
     const ROOT_LOGIN_URL = 'https://minsugpt.kro.kr/login?mode=admin';
-    const baseUrl = document.getElementById('baseUrl');
+    const AUTH_BASE = 'https://jaewondev6.pythonanywhere.com';
     const dashboard = document.getElementById('dashboard');
     const statusEl = document.getElementById('status');
     const usersBody = document.querySelector('#usersTable tbody');
@@ -71,7 +71,7 @@
       return h;
     }
     async function call(path, opts) {
-      const res = await fetch(baseUrl.value.trim() + path, opts || {});
+      const res = await fetch(AUTH_BASE + path, opts || {});
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
       return data;
@@ -99,7 +99,7 @@
       try {
         parsed = JSON.parse(raw);
       } catch {
-        window.location.replace('../login.html?mode=admin');
+        window.location.replace(ROOT_LOGIN_URL);
         return false;
       }
       if (!parsed || !parsed.token) return false;
