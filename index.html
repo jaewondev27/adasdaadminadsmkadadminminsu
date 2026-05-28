@@ -94,10 +94,7 @@
         history.replaceState({}, '', window.location.pathname + window.location.search);
       }
       const raw = localStorage.getItem('minsugpt_auth_v1');
-      if (!raw) {
-        window.location.replace(ROOT_LOGIN_URL);
-        return false;
-      }
+      if (!raw) return false;
       let parsed = null;
       try {
         parsed = JSON.parse(raw);
@@ -105,16 +102,10 @@
         window.location.replace('../login.html?mode=admin');
         return false;
       }
-      if (!parsed || !parsed.token) {
-        window.location.replace(ROOT_LOGIN_URL);
-        return false;
-      }
+      if (!parsed || !parsed.token) return false;
       token = parsed.token;
       const verify = await call('/api/auth/verify', { headers: headers(false) }).catch(() => null);
-      if (!verify || !verify.user || verify.user.username !== 'admin') {
-        window.location.replace(ROOT_LOGIN_URL);
-        return false;
-      }
+      if (!verify || !verify.user || verify.user.username !== 'admin') return false;
       return true;
     }
 
@@ -180,7 +171,15 @@
 
     (async () => {
       const ok = await bootstrapAuth();
-      if (!ok) return;
+      if (!ok) {
+        setStatus('관리자 인증이 없습니다. 아래 버튼으로 로그인하세요.');
+        const btn = document.createElement('button');
+        btn.className = 'primary';
+        btn.textContent = '관리자 로그인으로 이동';
+        btn.addEventListener('click', () => window.location.replace(ROOT_LOGIN_URL));
+        document.querySelector('.card .row').appendChild(btn);
+        return;
+      }
       await loadUsers();
     })();
   </script>
