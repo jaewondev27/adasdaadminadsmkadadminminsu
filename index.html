@@ -115,6 +115,8 @@
   <script>
     const ROOT_LOGIN_URL = 'https://minsugpt.kro.kr/login?mode=admin';
     const AUTH_BASE = 'https://jaewondev6.pythonanywhere.com';
+    const AUTH_STORAGE_KEY = 'minsugpt_auth_v1';
+    const AUTH_VERIFY_INTERVAL_MS = 12000;
     const dashboard = document.getElementById('dashboard');
     const statusEl = document.getElementById('status');
     const usersBody = document.querySelector('#usersTable tbody');
@@ -130,6 +132,8 @@
     let confirmResolver = null;
     const SLOT_X = [0, 11, 22];
     const panelAnimStops = new Set();
+    let authSyncTimer = null;
+    let authSyncInFlight = false;
 
     function headers(json) {
       const h = { Authorization: 'Bearer ' + token };
@@ -141,6 +145,74 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
       return data;
+    }
+    function readStoredSession() {
+      const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.token) return null;
+        return parsed;
+      } catch {
+        return null;
+      }
+    }
+    function logoutToRootLogin() {
+      token = '';
+      if (authSyncTimer) {
+        clearInterval(authSyncTimer);
+        authSyncTimer = null;
+      }
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      window.location.replace(ROOT_LOGIN_URL);
+    }
+    async function verifyAdminSession(quiet) {
+      if (authSyncInFlight) return false;
+      const session = readStoredSession();
+      if (!session || !session.token) {
+        logoutToRootLogin();
+        return false;
+      }
+      authSyncInFlight = true;
+      token = session.token;
+      try {
+        const verify = await call('/api/auth/verify', { headers: headers(false) });
+        if (!verify || !verify.user || verify.user.username !== 'admin') {
+          logoutToRootLogin();
+          return false;
+        }
+        return true;
+      } catch (e) {
+        if (!quiet) console.error('admin verify failed', e);
+        logoutToRootLogin();
+        return false;
+      } finally {
+        authSyncInFlight = false;
+      }
+    }
+    function startAuthSyncWatchers() {
+      if (authSyncTimer) return;
+      authSyncTimer = setInterval(() => {
+        verifyAdminSession(true).catch(() => {});
+      }, AUTH_VERIFY_INTERVAL_MS);
+      window.addEventListener('focus', () => {
+        verifyAdminSession(true).catch(() => {});
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          verifyAdminSession(true).catch(() => {});
+        }
+      });
+      window.addEventListener('storage', (e) => {
+        if (e.key !== AUTH_STORAGE_KEY) return;
+        const session = readStoredSession();
+        if (!session || !session.token) {
+          logoutToRootLogin();
+          return;
+        }
+        token = session.token;
+        verifyAdminSession(true).catch(() => {});
+      });
     }
     function setStatus(msg) { statusEl.textContent = '상태: ' + msg; }
     function createTypingDots() {
@@ -260,14 +332,14 @@
           const json = decodeURIComponent(escape(atob(encoded)));
           const parsed = JSON.parse(json);
           if (parsed && parsed.token) {
-            localStorage.setItem('minsugpt_auth_v1', JSON.stringify(parsed));
+            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(parsed));
           }
         } catch (e) {
           console.error('admin auth payload decode failed', e);
         }
         history.replaceState({}, '', window.location.pathname + window.location.search);
       }
-      const raw = localStorage.getItem('minsugpt_auth_v1');
+      const raw = localStorage.getItem(AUTH_STORAGE_KEY);
       if (!raw) {
         window.location.replace(ROOT_LOGIN_URL);
         return false;
@@ -284,12 +356,7 @@
         return false;
       }
       token = parsed.token;
-      const verify = await call('/api/auth/verify', { headers: headers(false) }).catch(() => null);
-      if (!verify || !verify.user || verify.user.username !== 'admin') {
-        window.location.replace(ROOT_LOGIN_URL);
-        return false;
-      }
-      return true;
+      return verifyAdminSession(false);
     }
 
     async function loadUsers() {
@@ -317,9 +384,7 @@
     }
 
     document.getElementById('adminLogoutBtn').addEventListener('click', () => {
-      token = '';
-      localStorage.removeItem('minsugpt_auth_v1');
-      window.location.replace(ROOT_LOGIN_URL);
+      logoutToRootLogin();
     });
     document.getElementById('loadUsersBtn').addEventListener('click', async () => {
       try { await loadUsers(); } catch (e) { setStatus('오류: ' + e.message); }
@@ -412,6 +477,7 @@
     (async () => {
       const ok = await bootstrapAuth();
       if (!ok) return;
+      startAuthSyncWatchers();
       await loadUsers();
     })();
   </script>
